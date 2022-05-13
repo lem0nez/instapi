@@ -3,6 +3,10 @@ body {
   margin: 1rem;
 }
 
+code {
+  word-wrap: break-word;
+}
+
 @media (prefers-color-scheme: light) {
   body {
     color: #303030;

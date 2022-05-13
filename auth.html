@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Instafetcher — Authorization page.">
+
+    <link rel="stylesheet" href="styles.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <title>Instafetcher — Authorization</title>
+
+    <script>
+      window.onload = function() {
+        var code = new URL(window.location.href).searchParams.get("code");
+        var placeholder = document.getElementById("code");
+        placeholder.textContent = code == null ? "isn't present" : code;
+      }
+    </script>
+  </head>
+
+  <body>
+    <h1>Authorization</h1>
+    <p>Your short-lived authorization code: <code id="code" /></p>
+  </body>
+</html>

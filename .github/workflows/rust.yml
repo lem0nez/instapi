@@ -10,5 +10,9 @@ jobs:
       - uses: actions/checkout@v3
       - name: Build
         run: cargo build $CARGO_OPTIONS
+        env:
+          INSTAGRAM_APP_ID: ${{ secrets.INSTAGRAM_APP_ID }}
+          INSTAGRAM_APP_SECRET: ${{ secrets.INSTAGRAM_APP_SECRET }}
+          INSTAGRAM_OAUTH_URI: ${{ secrets.INSTAGRAM_OAUTH_URI }}
       - name: Test
         run: cargo test $CARGO_OPTIONS

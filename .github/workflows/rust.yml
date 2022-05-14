@@ -1,0 +1,14 @@
+name: Rust
+on: [push, pull_request]
+env:
+  CARGO_OPTIONS: --color=always --verbose
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Build
+        run: cargo build $CARGO_OPTIONS
+      - name: Test
+        run: cargo test $CARGO_OPTIONS

@@ -1,3 +1,9 @@
+/*
+ * Copyright © 2022 Nikita Dudko. All rights reserved.
+ * Contacts: <nikita.dudko.95@gmail.com>
+ * Licensed under the MIT License.
+ */
+
 use instafetcher::auth;
 
 fn main() {

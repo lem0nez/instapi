@@ -3,3 +3,4 @@
 // Licensed under the MIT License.
 
 pub mod auth;
+pub mod profile;

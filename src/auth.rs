@@ -2,12 +2,42 @@
 // Contacts: <nikita.dudko.95@gmail.com>
 // Licensed under the MIT License.
 
-use std::{collections, error, io::{self, Write}};
+use std::{collections, error, fmt, io::{self, Write}, result};
 
 pub struct Secrets {
     pub app_id: u64,
     pub app_secret: &'static str,
     pub oauth_uri: &'static str,
+}
+
+#[derive(Debug)]
+pub struct Error {
+    details: String,
+}
+
+impl error::Error for Error {}
+type Result<T> = result::Result<T, Error>;
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.details)
+    }
+}
+
+impl From<io::Error> for Error {
+    fn from(io_err: io::Error) -> Self {
+        Error {
+            details: format!("[I/O error] {}", io_err),
+        }
+    }
+}
+
+impl From<reqwest::Error> for Error {
+    fn from(request_err: reqwest::Error) -> Self {
+        Error {
+            details: format!("[request error] {}", request_err),
+        }
+    }
 }
 
 pub trait Token {
@@ -33,7 +63,7 @@ struct ShortLivedTokenResponse {
 }
 
 impl ShortLivedToken {
-    pub fn new(secrets: &Secrets) -> Result<ShortLivedToken, Box<dyn error::Error>> {
+    pub fn new(secrets: &Secrets) -> Result<ShortLivedToken> {
         let auth_url = format!(
             "https://api.instagram.com/oauth/authorize?client_id={}&redirect_uri={}\
             &scope=user_profile,user_media&response_type=code",
@@ -55,7 +85,7 @@ impl ShortLivedToken {
         Self::exchange(secrets, code.trim())
     }
 
-    fn exchange(secrets: &Secrets, code: &str) -> Result<ShortLivedToken, Box<dyn error::Error>> {
+    fn exchange(secrets: &Secrets, code: &str) -> Result<ShortLivedToken> {
         const AVAILABILITY_HOURS: i64 = 1;
 
         let app_id = secrets.app_id.to_string();
@@ -72,13 +102,9 @@ impl ShortLivedToken {
             .post("https://api.instagram.com/oauth/access_token")
             .form(&params)
             .send()?
-            .error_for_status();
+            .error_for_status()?;
 
-        if let Err(e) = response {
-            return Err(Box::new(e));
-        }
-
-        let token: ShortLivedTokenResponse = response.unwrap().json()?;
+        let token: ShortLivedTokenResponse = response.json()?;
         Ok(ShortLivedToken {
             access_token: token.access_token,
             user_id: token.user_id,
@@ -115,10 +141,7 @@ struct LongLivedTokenResponse {
 }
 
 impl LongLivedToken {
-    pub fn new(
-        secrets: &Secrets,
-        short_lived_token: &ShortLivedToken,
-    ) -> Result<LongLivedToken, Box<dyn error::Error>> {
+    pub fn new(secrets: &Secrets, short_lived_token: &ShortLivedToken) -> Result<LongLivedToken> {
         let response = reqwest::blocking::get(format!(
             "https://graph.instagram.com/access_token\
             ?grant_type=ig_exchange_token&client_secret={}&access_token={}",
@@ -133,7 +156,7 @@ impl LongLivedToken {
         })
     }
 
-    pub fn refresh(&mut self) -> Result<(), Box<dyn error::Error>> {
+    pub fn refresh(&mut self) -> Result<()> {
         let response = reqwest::blocking::get(format!(
             "https://graph.instagram.com/refresh_access_token\
             ?grant_type=ig_refresh_token&access_token={}",

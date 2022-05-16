@@ -2,6 +2,9 @@
 // Contacts: <nikita.dudko.95@gmail.com>
 // Licensed under the MIT License.
 
+//! Provides abstractions over the
+//! [Instagram Basic Display API](https://developers.facebook.com/docs/instagram-basic-display-api/).
+
 use std::{error, result};
 
 pub mod auth;

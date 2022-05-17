@@ -70,13 +70,11 @@ mod response {
 
 impl ShortLivedToken {
     /// Constructs a new instance by exchanging `code` for a short-lived Instagram User Access
-    /// Token. `code` can be retrieved using the [request_code][Self::request_code] function.
+    /// Token. `code` can be retrieved using the [request_code] function.
     ///
     /// # Panics
     /// If a [Client][reqwest::blocking::Client] can't be initialized.
-    pub fn new(secrets: &Secrets, code: &str) -> reqwest::Result<ShortLivedToken> {
-        const AVAILABILITY_HOURS: u8 = 1;
-
+    pub fn new(secrets: &Secrets, code: &str) -> reqwest::Result<Self> {
         let app_id = secrets.app_id.to_string();
         let params: collections::HashMap<&str, &str> = [
             ("client_id", app_id.as_str()),
@@ -92,55 +90,30 @@ impl ShortLivedToken {
             .form(&params)
             .send()?
             .error_for_status()?;
-
-        let token: response::ShortLivedToken = response.json()?;
-        Ok(ShortLivedToken {
-            access_token: token.access_token,
-            user_id: token.user_id,
-            expiration_date:
-                chrono::Utc::now() + chrono::Duration::hours(AVAILABILITY_HOURS.into()),
-        })
+        Ok(response.json::<response::ShortLivedToken>()?.into())
     }
+}
 
-    /// Interactively forwards the user to the authorization page and requests a code.
-    /// Returns trimmed authorization code.
-    ///
-    /// # Panics
-    /// 1. If [auth_url][Self::auth_url] panics or if failed to write to the standard output.
-    pub fn request_code(secrets: &Secrets) -> crate::Result<String> {
-        let auth_url = Self::auth_url(secrets)?;
-
-        println!("Opening the authorization page...");
-        if let Err(e) = open::that(auth_url.as_str()) {
-            eprintln!("Failed to open an URL: {}", e);
-            println!("Follow this link manually to perform the authorization: {}", auth_url);
-        }
-
-        let mut code = String::new();
-        loop {
-            print!("Enter the authorization code: ");
-            io::stdout().flush()?;
-            io::stdin().read_line(&mut code)?;
-
-            code = code.trim().to_string();
-            if !code.is_empty() {
-                break;
-            }
-            eprintln!("You must enter a code!");
-        }
-        Ok(code)
+impl Token for ShortLivedToken {
+    fn get(&self) -> &str {
+        &self.access_token
     }
+    fn user_id(&self) -> u64 {
+        self.user_id
+    }
+    fn expiration_date(&self) -> &chrono::DateTime<chrono::Utc> {
+        &self.expiration_date
+    }
+}
 
-    /// Returns an URL that refers to the Authorization Window.
-    ///
-    /// # Panics
-    /// If `format!` panics.
-    pub fn auth_url(secrets: &Secrets) -> Result<url::Url, url::ParseError> {
-        url::Url::parse(format!(
-            "https://api.instagram.com/oauth/authorize?client_id={}&redirect_uri={}\
-            &scope=user_profile,user_media&response_type=code",
-            secrets.app_id, secrets.oauth_uri
-        ).as_str())
+impl From<response::ShortLivedToken> for ShortLivedToken {
+    fn from(response: response::ShortLivedToken) -> Self {
+        const AVAILABILITY_HOURS: i64 = 1;
+        Self {
+            access_token: response.access_token,
+            user_id: response.user_id,
+            expiration_date: chrono::Utc::now() + chrono::Duration::hours(AVAILABILITY_HOURS),
+        }
     }
 }
 
@@ -150,10 +123,7 @@ impl LongLivedToken {
     ///
     /// # Panics
     /// If `format!` panics while formatting an URL.
-    pub fn new(
-        secrets: &Secrets,
-        short_lived_token: &ShortLivedToken,
-    ) -> crate::Result<LongLivedToken> {
+    pub fn new(secrets: &Secrets, short_lived_token: &ShortLivedToken) -> crate::Result<Self> {
         if !short_lived_token.is_valid() {
             return Err("short-lived token is expired".into());
         }
@@ -165,7 +135,7 @@ impl LongLivedToken {
         ))?.error_for_status()?;
 
         let token: response::LongLivedToken = response.json()?;
-        Ok(LongLivedToken {
+        Ok(Self {
             access_token: token.access_token,
             user_id: short_lived_token.user_id,
             expiration_date:
@@ -196,18 +166,6 @@ impl LongLivedToken {
     }
 }
 
-impl Token for ShortLivedToken {
-    fn get(&self) -> &str {
-        &self.access_token
-    }
-    fn user_id(&self) -> u64 {
-        self.user_id
-    }
-    fn expiration_date(&self) -> &chrono::DateTime<chrono::Utc> {
-        &self.expiration_date
-    }
-}
-
 impl Token for LongLivedToken {
     fn get(&self) -> &str {
         &self.access_token
@@ -220,17 +178,56 @@ impl Token for LongLivedToken {
     }
 }
 
+/// Interactively forwards the user to the authorization page and requests a code.
+/// Returns trimmed authorization code.
+///
+/// # Panics
+/// 1. If [auth_url] panics or if failed to write to the standard output.
+pub fn request_code(secrets: &Secrets) -> crate::Result<String> {
+    let auth_url = auth_url(secrets)?;
+
+    println!("Opening the authorization page...");
+    if let Err(e) = open::that(auth_url.as_str()) {
+        eprintln!("Failed to open an URL: {}", e);
+        println!("Follow this link manually to perform the authorization: {}", auth_url);
+    }
+
+    let mut code = String::new();
+    loop {
+        print!("Enter the authorization code: ");
+        io::stdout().flush()?;
+        io::stdin().read_line(&mut code)?;
+
+        code = code.trim().to_string();
+        if !code.is_empty() {
+            break;
+        }
+        eprintln!("You must enter a code!");
+    }
+    Ok(code)
+}
+
+/// Returns an URL that refers to the Authorization Window.
+///
+/// # Panics
+/// If `format!` panics.
+pub fn auth_url(secrets: &Secrets) -> Result<url::Url, url::ParseError> {
+    url::Url::parse(format!(
+        "https://api.instagram.com/oauth/authorize?client_id={}&redirect_uri={}\
+        &scope=user_profile,user_media&response_type=code",
+        secrets.app_id, secrets.oauth_uri
+    ).as_str())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn auth_url() {
-        let secrets = Secrets {
+        let secrets = super::Secrets {
             app_id: 0,
             app_secret: "",
             oauth_uri: "",
         };
-        assert!(ShortLivedToken::auth_url(&secrets).is_ok())
+        assert!(super::auth_url(&secrets).is_ok())
     }
 }

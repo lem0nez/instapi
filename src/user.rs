@@ -33,12 +33,12 @@ pub struct MediaItem {
     caption: Option<String>,
     id: u64,
     media_type: MediaType,
-    media_url: String,
+    media_url: url::Url,
     // Will be omitted if an item contains copyrighted material,
     // or has been flagged for a copyright violation.
-    permalink: Option<String>,
+    permalink: Option<url::Url>,
     // Only available for videos.
-    thumbnail_url: Option<String>,
+    thumbnail_url: Option<url::Url>,
     timestamp: chrono::DateTime<chrono::offset::FixedOffset>,
     username: String,
 }
@@ -52,8 +52,14 @@ mod response {
     }
 
     #[derive(serde::Deserialize)]
+    pub(super) struct Paging {
+        pub(super) next: Option<String>,
+    }
+
+    #[derive(serde::Deserialize)]
     pub(super) struct Media {
         pub(super) data: Vec<MediaItem>,
+        pub(super) paging: Paging,
     }
 
     #[derive(serde::Deserialize)]
@@ -84,47 +90,32 @@ impl<T: auth::Token> Profile<T> {
             ?fields=account_type,media_count,username&access_token={}",
             API_VERSION, self.id(), self.token.get()
         ))?.error_for_status()?;
-
-        let info: response::Info = response.json()?;
-        Ok(Info {
-            account_type: match info.account_type.as_str() {
-                "BUSINESS" => AccountType::Bussiness,
-                "MEDIA_CREATOR" => AccountType::MediaCreator,
-                "PERSONAL" => AccountType::Personal,
-                _ => return Err("invalid account type".into()),
-            },
-            media_count: info.media_count,
-            username: info.username,
-        })
+        Info::from(response.json::<response::Info>()?)
     }
 
-    pub fn recent_media(&self) -> crate::Result<Vec<MediaItem>> {
-        let response = reqwest::blocking::get(format!(
+    pub fn media<F: Fn(&MediaItem)>(&self, callback: F) -> crate::Result<Vec<MediaItem>> {
+        let mut request_url = format!(
             "https://graph.instagram.com/{}/{}/media?access_token={}\
             &fields=caption,id,media_type,media_url,permalink,thumbnail_url,timestamp,username",
             API_VERSION, self.id(), self.token.get()
-        ))?.error_for_status()?;
+        );
 
-        let media: response::Media = response.json()?;
+        let client = reqwest::blocking::Client::new();
         let mut items = Vec::new();
 
-        for item in media.data {
-            items.push(MediaItem {
-                caption: item.caption,
-                id: item.id.parse()?,
-                media_type: match item.media_type.as_str() {
-                    "IMAGE" => MediaType::Image,
-                    "VIDEO" => MediaType::Video,
-                    "CAROUSEL_ALBUM" => MediaType::CarouselAlbum,
-                    _ => return Err("invalid media type".into()),
-                },
-                media_url: item.media_url,
-                permalink: item.permalink,
-                thumbnail_url: item.thumbnail_url,
-                // parse_from_rfc3339 isn't working here.
-                timestamp: chrono::DateTime::parse_from_str(&item.timestamp, "%FT%T%z")?,
-                username: item.username,
-            });
+        while !request_url.is_empty() {
+            let response = client.get(&request_url).send()?.error_for_status()?;
+            request_url.clear();
+
+            let media: response::Media = response.json()?;
+            for response_item in media.data {
+                let media_item = MediaItem::from(response_item)?;
+                callback(&media_item);
+                items.push(media_item);
+            }
+            if let Some(url) = media.paging.next {
+                request_url = url;
+            }
         }
         Ok(items)
     }
@@ -140,6 +131,19 @@ impl Info {
     pub fn username(&self) -> &str {
         &self.username
     }
+
+    fn from(response: response::Info) -> crate::Result<Self> {
+        Ok(Self {
+            account_type: match response.account_type.as_str() {
+                "BUSINESS" => AccountType::Bussiness,
+                "MEDIA_CREATOR" => AccountType::MediaCreator,
+                "PERSONAL" => AccountType::Personal,
+                _ => return Err("invalid account type".into()),
+            },
+            media_count: response.media_count,
+            username: response.username,
+        })
+    }
 }
 
 impl MediaItem {
@@ -152,19 +156,44 @@ impl MediaItem {
     pub fn media_type(&self) -> &MediaType {
         &self.media_type
     }
-    pub fn media_url(&self) -> &str {
+    pub fn media_url(&self) -> &url::Url {
         &self.media_url
     }
-    pub fn permalink(&self) -> Option<&str> {
-        self.permalink.as_deref()
+    pub fn permalink(&self) -> &Option<url::Url> {
+        &self.permalink
     }
-    pub fn thumbnail_url(&self) -> Option<&str> {
-        self.thumbnail_url.as_deref()
+    pub fn thumbnail_url(&self) -> &Option<url::Url> {
+        &self.thumbnail_url
     }
     pub fn timestamp(&self) -> &chrono::DateTime<chrono::offset::FixedOffset> {
         &self.timestamp
     }
     pub fn username(&self) -> &str {
         &self.username
+    }
+
+    fn from(response: response::MediaItem) -> crate::Result<Self> {
+        Ok(Self {
+            caption: response.caption,
+            id: response.id.parse()?,
+            media_type: match response.media_type.as_str() {
+                "IMAGE" => MediaType::Image,
+                "VIDEO" => MediaType::Video,
+                "CAROUSEL_ALBUM" => MediaType::CarouselAlbum,
+                _ => return Err("invalid media type".into()),
+            },
+            media_url: response.media_url.parse()?,
+            permalink: match response.permalink {
+                Some(str) => Some(str.parse()?),
+                None => None,
+            },
+            thumbnail_url: match response.thumbnail_url {
+                Some(str) => Some(str.parse()?),
+                None => None,
+            },
+            // parse_from_rfc3339 isn't working here.
+            timestamp: chrono::DateTime::parse_from_str(&response.timestamp, "%FT%T%z")?,
+            username: response.username,
+        })
     }
 }

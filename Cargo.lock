@@ -302,6 +302,7 @@ name = "instafetcher"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "num_cpus",
  "open",
  "reqwest",
  "serde",

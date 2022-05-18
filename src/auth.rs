@@ -4,7 +4,11 @@
 
 //! Authorization related stuff: tokens and application secrets.
 
-use std::{collections, io::{self, Write}};
+use std::{collections::HashMap, io::{self, Write}};
+
+use chrono::{DateTime, Duration, Utc};
+use serde::{Deserialize, Serialize};
+use url::Url;
 
 /// Private information that specific for an Instagram application.
 pub struct Secrets {
@@ -23,60 +27,61 @@ pub trait Token {
     /// Get the user ID that a token belongs to.
     fn user_id(&self) -> u64;
     /// Returns the date after which a token won't be valid.
-    fn expiration_date(&self) -> &chrono::DateTime<chrono::Utc>;
+    fn expiration_date(&self) -> &DateTime<Utc>;
 
     /// Checks if a token isn't expired.
     fn is_valid(&self) -> bool {
-        chrono::Utc::now() < *self.expiration_date()
+        Utc::now() < *self.expiration_date()
     }
 }
 
 /// Serializable short-lived token, valid for 1 hour after retrieving.
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct ShortLivedToken {
     access_token: String,
     user_id: u64,
     #[serde(with = "chrono::serde::ts_seconds")]
-    expiration_date: chrono::DateTime<chrono::Utc>,
+    expiration_date: DateTime<Utc>,
 }
 
 /// Serializable long-lived token that valid for 60 days, or 90 days for private accounts.
 /// Can be refreshed.
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct LongLivedToken {
     access_token: String,
     user_id: u64,
     #[serde(with = "chrono::serde::ts_seconds")]
-    expiration_date: chrono::DateTime<chrono::Utc>,
+    expiration_date: DateTime<Utc>,
 }
 
 /// Abstractions over JSON responses.
 mod response {
-    #[derive(serde::Deserialize)]
+    use serde::Deserialize;
+
+    #[derive(Deserialize)]
     pub(super) struct ShortLivedToken {
         pub(super) access_token: String,
         pub(super) user_id: u64,
     }
 
-    #[derive(serde::Deserialize)]
+    #[derive(Deserialize)]
     pub(super) struct LongLivedToken {
         pub(super) access_token: String,
-        /// Always contains the “bearer” value.
-        pub(super) token_type: String,
         /// Represented in seconds.
         pub(super) expires_in: u32,
     }
 }
 
 impl ShortLivedToken {
-    /// Constructs a new instance by exchanging `code` for a short-lived Instagram User Access
-    /// Token. `code` can be retrieved using the [request_code] function.
+    /// Constructs a new instance by exchanging `code` for a short-lived User Access Token.
+    /// `code` can be retrieved using the [request_code] function.
     ///
     /// # Panics
-    /// If a [Client][reqwest::blocking::Client] can't be initialized.
+    /// If a [Client][reqwest::blocking::Client] can't be initialized or if `format!` panics while
+    /// constructing an URL.
     pub fn new(secrets: &Secrets, code: &str) -> reqwest::Result<Self> {
         let app_id = secrets.app_id.to_string();
-        let params: collections::HashMap<&str, &str> = [
+        let params: HashMap<_, _> = [
             ("client_id", app_id.as_str()),
             ("client_secret", secrets.app_secret),
             ("redirect_uri", secrets.oauth_uri),
@@ -86,7 +91,7 @@ impl ShortLivedToken {
 
         let client = reqwest::blocking::Client::new();
         let response = client
-            .post("https://api.instagram.com/oauth/access_token")
+            .post(format!("{}/oauth/access_token", crate::AUTH_BASE_URL))
             .form(&params)
             .send()?
             .error_for_status()?;
@@ -101,7 +106,7 @@ impl Token for ShortLivedToken {
     fn user_id(&self) -> u64 {
         self.user_id
     }
-    fn expiration_date(&self) -> &chrono::DateTime<chrono::Utc> {
+    fn expiration_date(&self) -> &DateTime<Utc> {
         &self.expiration_date
     }
 }
@@ -112,7 +117,7 @@ impl From<response::ShortLivedToken> for ShortLivedToken {
         Self {
             access_token: response.access_token,
             user_id: response.user_id,
-            expiration_date: chrono::Utc::now() + chrono::Duration::hours(AVAILABILITY_HOURS),
+            expiration_date: Utc::now() + Duration::hours(AVAILABILITY_HOURS),
         }
     }
 }
@@ -122,46 +127,48 @@ impl LongLivedToken {
     /// `short_lived_token` must be valid.
     ///
     /// # Panics
-    /// If `format!` panics while formatting an URL.
-    pub fn new(secrets: &Secrets, short_lived_token: &ShortLivedToken) -> crate::Result<Self> {
+    /// If `format!` panics while constructing an URL.
+    pub fn new(secrets: &Secrets, short_lived_token: ShortLivedToken) -> crate::Result<Self> {
         if !short_lived_token.is_valid() {
-            return Err("short-lived token is expired".into());
+            return Err("short-lived token has been expired".into());
         }
 
-        let response = reqwest::blocking::get(format!(
-            "https://graph.instagram.com/access_token\
-            ?grant_type=ig_exchange_token&client_secret={}&access_token={}",
-            secrets.app_secret, short_lived_token.get()
-        ))?.error_for_status()?;
+        let url = Url::parse_with_params(format!("{}/access_token", crate::BASE_URL).as_str(), [
+            ("client_secret", secrets.app_secret),
+            ("access_token", short_lived_token.get()),
+            ("grant_type", "ig_exchange_token"),
+        ])?;
+        let response = reqwest::blocking::get(url)?.error_for_status()?;
 
         let token: response::LongLivedToken = response.json()?;
         Ok(Self {
             access_token: token.access_token,
             user_id: short_lived_token.user_id,
-            expiration_date:
-                chrono::Utc::now() + chrono::Duration::seconds(token.expires_in.into()),
+            expiration_date: Utc::now() + Duration::seconds(token.expires_in.into()),
         })
     }
 
     /// Refreshes a valid token.
     ///
     /// # Panics
-    /// If `format!` panics while formatting an URL.
+    /// If `format!` panics while constructing an URL.
     pub fn refresh(&mut self) -> crate::Result<()> {
         if !self.is_valid() {
-            return Err("token is expired".into());
+            return Err("token has been expired".into());
         }
 
-        let response = reqwest::blocking::get(format!(
-            "https://graph.instagram.com/refresh_access_token\
-            ?grant_type=ig_refresh_token&access_token={}",
-            self.access_token
-        ))?.error_for_status()?;
+        let url = Url::parse_with_params(
+            format!("{}/refresh_access_token", crate::BASE_URL).as_str(),
+            [
+                ("access_token", self.access_token.as_str()),
+                ("grant_type", "ig_refresh_token"),
+            ]
+        )?;
+        let response = reqwest::blocking::get(url)?.error_for_status()?;
 
         let token: response::LongLivedToken = response.json()?;
         self.access_token = token.access_token;
-        self.expiration_date =
-            chrono::Utc::now() + chrono::Duration::seconds(token.expires_in.into());
+        self.expiration_date = Utc::now() + Duration::seconds(token.expires_in.into());
         Ok(())
     }
 }
@@ -173,16 +180,16 @@ impl Token for LongLivedToken {
     fn user_id(&self) -> u64 {
         self.user_id
     }
-    fn expiration_date(&self) -> &chrono::DateTime<chrono::Utc> {
+    fn expiration_date(&self) -> &DateTime<Utc> {
         &self.expiration_date
     }
 }
 
 /// Interactively forwards the user to the authorization page and requests a code.
-/// Returns trimmed authorization code.
+/// Returns the trimmed authorization code.
 ///
 /// # Panics
-/// 1. If [auth_url] panics or if failed to write to the standard output.
+/// If [auth_url] panics or if failed to write to the standard output.
 pub fn request_code(secrets: &Secrets) -> crate::Result<String> {
     let auth_url = auth_url(secrets)?;
 
@@ -211,23 +218,34 @@ pub fn request_code(secrets: &Secrets) -> crate::Result<String> {
 ///
 /// # Panics
 /// If `format!` panics.
-pub fn auth_url(secrets: &Secrets) -> Result<url::Url, url::ParseError> {
-    url::Url::parse(format!(
-        "https://api.instagram.com/oauth/authorize?client_id={}&redirect_uri={}\
-        &scope=user_profile,user_media&response_type=code",
-        secrets.app_id, secrets.oauth_uri
-    ).as_str())
+pub fn auth_url(secrets: &Secrets) -> Result<Url, url::ParseError> {
+    Url::parse_with_params(format!("{}/oauth/authorize", crate::AUTH_BASE_URL).as_str(), [
+        ("client_id", secrets.app_id.to_string().as_str()),
+        ("redirect_uri", secrets.oauth_uri),
+        ("scope", "user_profile,user_media"),
+        ("response_type", "code"),
+    ])
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn auth_url() {
-        let secrets = super::Secrets {
+        let secrets = Secrets {
             app_id: 0,
             app_secret: "",
             oauth_uri: "",
         };
         assert!(super::auth_url(&secrets).is_ok())
+    }
+
+    #[test]
+    fn into_short_lived_token() {
+        ShortLivedToken::from(response::ShortLivedToken {
+              access_token: String::new(),
+              user_id: 0,
+        });
     }
 }

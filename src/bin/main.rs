@@ -2,10 +2,10 @@
 // Contacts: <nikita.dudko.95@gmail.com>
 // Licensed under the MIT License.
 
-use instafetcher::auth;
+use instafetcher::auth::Secrets;
 
 fn main() {
-    let secrets = auth::Secrets {
+    let secrets = Secrets {
         app_id: env!("INSTAGRAM_APP_ID")
             .parse()
             .expect("Instagram application ID must be a number"),

@@ -2,16 +2,15 @@ name: Rust
 on: [push, pull_request]
 env:
   CARGO_DISPLAY_OPTS: --color=always --verbose
+  CARGO_BUILD_OPTS: # --release
+
+  INSTAGRAM_APP_ID: ${{ secrets.INSTAGRAM_APP_ID }}
+  INSTAGRAM_APP_SECRET: ${{ secrets.INSTAGRAM_APP_SECRET }}
+  INSTAGRAM_OAUTH_URI: ${{ secrets.INSTAGRAM_OAUTH_URI }}
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      CARGO_BUILD_OPTS: # --release
-      INSTAGRAM_APP_ID: ${{ secrets.INSTAGRAM_APP_ID }}
-      INSTAGRAM_APP_SECRET: ${{ secrets.INSTAGRAM_APP_SECRET }}
-      INSTAGRAM_OAUTH_URI: ${{ secrets.INSTAGRAM_OAUTH_URI }}
-
     steps:
       - uses: actions/checkout@v3
 
@@ -32,15 +31,13 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Install clippy
-        run: rustup component add clippy
-
       - name: Install SARIF tools
         run: cargo install $CARGO_DISPLAY_OPTS clippy-sarif sarif-fmt
 
-      - name: Perfom analysis
+      - name: Perform analysis
         run:
-          cargo clippy --all-features --message-format=json |
+          cargo clippy $CARGO_DISPLAY_OPTS $CARGO_BUILD_OPTS
+                --all-features --message-format=json |
                 clippy-sarif | tee clippy-results.sarif | sarif-fmt
         continue-on-error: true
 

@@ -1,19 +1,48 @@
 name: Rust
 on: [push, pull_request]
 env:
-  CARGO_OPTIONS: --color=always --verbose
+  CARGO_DISPLAY_OPTS: --color=always --verbose
 
 jobs:
   build:
     runs-on: ubuntu-latest
     env:
+      CARGO_BUILD_OPTS: # --release
       INSTAGRAM_APP_ID: ${{ secrets.INSTAGRAM_APP_ID }}
       INSTAGRAM_APP_SECRET: ${{ secrets.INSTAGRAM_APP_SECRET }}
       INSTAGRAM_OAUTH_URI: ${{ secrets.INSTAGRAM_OAUTH_URI }}
 
     steps:
       - uses: actions/checkout@v3
-      - name: Build
-        run: cargo build $CARGO_OPTIONS
+
+      - name: Compile a package
+        run: cargo build $CARGO_DISPLAY_OPTS $CARGO_BUILD_OPTS
+
+      - name: Build documentation
+        run: cargo doc $CARGO_DISPLAY_OPTS $CARGO_BUILD_OPTS
+
       - name: Test
-        run: cargo test $CARGO_OPTIONS
+        run: cargo test $CARGO_DISPLAY_OPTS $CARGO_BUILD_OPTS
+
+    analyze:
+      runs-on: ubuntu-latest
+      permissions:
+        security-events: write
+
+      steps:
+        - uses: actions/checkout@v3
+
+        - name: Install components
+          run: cargo install $CARGO_DISPLAY_OPTS clippy clippy-sarif sarif-fmt
+
+        - name: Run clippy
+          run:
+            cargo clippy --all-features --message-format=json |
+                  clippy-sarif | tee clippy-results.sarif | sarif-fmt
+          continue-on-error: true
+
+        - name: Upload analysis
+          uses: github/codeql-action/upload-sarif@v2
+          with:
+            sarif_file: clippy-results.sarif
+            wait-for-processing: true

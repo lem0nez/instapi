@@ -255,9 +255,9 @@ mod tests {
     }
 
     #[test]
+    // Just check if it won't panic.
+    #[allow(unused_must_use)]
     fn into_short_lived_token() {
-        // Just check if it won't panic.
-        #[allow(unused_must_use)]
         ShortLivedToken::from(response::ShortLivedToken {
               access_token: String::new(),
               user_id: 0,

@@ -3,7 +3,7 @@
 // Licensed under the MIT License.
 
 use url::Url;
-use instafetcher::auth::Secrets;
+use instapi::auth::Secrets;
 
 fn main() {
     let secrets = Secrets {

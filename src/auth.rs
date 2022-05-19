@@ -14,7 +14,7 @@ use url::Url;
 ///
 /// # Examples
 /// ```
-/// let secrets = instafetcher::auth::Secrets {
+/// let secrets = instapi::auth::Secrets {
 ///     app_id: 759250753489257,
 ///     app_secret: "584afbb84069420aae402315ffddd360",
 ///     oauth_uri: url::Url::parse("https://example.com/auth").unwrap(),

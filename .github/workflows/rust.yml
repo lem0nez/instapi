@@ -32,10 +32,13 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Install components
-        run: cargo install $CARGO_DISPLAY_OPTS clippy clippy-sarif sarif-fmt
+      - name: Install clippy
+        run: rustup component add clippy
 
-      - name: Run clippy
+      - name: Install SARIF tools
+        run: cargo install $CARGO_DISPLAY_OPTS clippy-sarif sarif-fmt
+
+      - name: Perfom analysis
         run:
           cargo clippy --all-features --message-format=json |
                 clippy-sarif | tee clippy-results.sarif | sarif-fmt

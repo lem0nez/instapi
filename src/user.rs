@@ -2,6 +2,8 @@
 // Contacts: <nikita.dudko.95@gmail.com>
 // Licensed under the MIT License.
 
+//! Provides methods to retrieve user's information and media.
+
 use crate::auth::Token;
 use std::sync::{Arc, Mutex};
 
@@ -9,16 +11,19 @@ use chrono::{DateTime, FixedOffset};
 use threadpool::ThreadPool;
 use url::Url;
 
-pub struct Profile<T: Token> {
+/// Represents the user profile associated with the provided token.
+pub struct Profile<T> {
     token: T,
 }
 
+/// Basic information about the user profile.
 pub struct Info {
     username: String,
     account_type: AccountType,
     media_count: u64,
 }
 
+/// The user's account type.
 #[derive(Clone, Copy, PartialEq)]
 pub enum AccountType {
     Bussiness,
@@ -26,8 +31,8 @@ pub enum AccountType {
     Personal,
 }
 
-#[derive(Debug)]
-pub struct MediaItem {
+/// Provides metadata about the user's media: images, videos and albums.
+pub struct Media {
     id: u64,
     media_type: MediaType,
     username: String,
@@ -39,14 +44,15 @@ pub struct MediaItem {
     thumbnail_url: Option<Url>,
 }
 
+/// Type of a media item.
 #[derive(Clone, Copy, PartialEq)]
-#[derive(Debug)]
 pub enum MediaType {
     Image,
     Video,
     CarouselAlbum,
 }
 
+/// Abstractions over JSON responses.
 mod response {
     use serde::Deserialize;
 
@@ -58,13 +64,13 @@ mod response {
     }
 
     #[derive(Deserialize)]
-    pub(super) struct Media {
-        pub(super) data: Vec<MediaItem>,
+    pub(super) struct MediaContainer {
+        pub(super) data: Vec<Media>,
         pub(super) paging: Paging,
     }
 
     #[derive(Deserialize)]
-    pub(super) struct MediaItem {
+    pub(super) struct Media {
         pub(super) caption: Option<String>,
         pub(super) id: String,
         pub(super) media_type: String,
@@ -77,19 +83,24 @@ mod response {
 
     #[derive(Deserialize)]
     pub(super) struct Paging {
+        /// URL to the next page with media items.
         pub(super) next: Option<String>,
     }
 }
 
 impl<T: Token> Profile<T> {
+    /// Constructs a new profile that associated with the provided `token`.
+    /// Before calling make sure that `token` is valid.
     pub fn new(token: T) -> Profile<T> {
         Profile { token }
     }
 
+    /// Returns the user ID.
     pub fn id(&self) -> u64 {
         self.token.user_id()
     }
 
+    /// Retrieves basic information about the user.
     pub fn info(&self) -> crate::Result<Info> {
         let url = Url::parse_with_params(
             format!("{}/{}/{}", crate::BASE_URL, crate::API_VERSION, self.id()).as_str(),
@@ -102,16 +113,25 @@ impl<T: Token> Profile<T> {
         Info::from(response.json::<response::Info>()?)
     }
 
-    pub fn media(&self) -> crate::Result<Vec<MediaItem>> {
+    /// Gathers all user's media items. Uses all logical CPU cores to parse responses.
+    /// To gather album contents use [album][Profile::album] method.
+    ///
+    /// # Panics
+    /// If [Client][reqwest::blocking::Client] failed to initialize.
+    pub fn media(&self) -> crate::Result<Vec<Media>> {
         Self::collect_media(Url::parse_with_params(
             format!("{}/{}/{}/media", crate::BASE_URL, crate::API_VERSION, self.id()).as_str(),
             self.media_params(),
         )?)
     }
 
-    pub fn album(&self, parent: &MediaItem) -> crate::Result<Vec<MediaItem>> {
+    /// Gathers all album contents. Works in the same way as [media][Profile::media] method.
+    ///
+    /// # Panics
+    /// If [Client][reqwest::blocking::Client] failed to initialize.
+    pub fn album(&self, parent: &Media) -> crate::Result<Vec<Media>> {
         if parent.media_type != MediaType::CarouselAlbum {
-            return Err("must be an album".into());
+            return Err("parent must be an album".into());
         }
 
         Self::collect_media(Url::parse_with_params(
@@ -120,7 +140,11 @@ impl<T: Token> Profile<T> {
         )?)
     }
 
-    fn collect_media(url: Url) -> crate::Result<Vec<MediaItem>> {
+    /// Recursively retrieves media items by iterating over pages.
+    ///
+    /// # Panics
+    /// If [Client][reqwest::blocking::Client] failed to initialize.
+    fn collect_media(url: Url) -> crate::Result<Vec<Media>> {
         let mut url = Some(url);
         let client = reqwest::blocking::Client::new();
         let pool = ThreadPool::new(num_cpus::get());
@@ -128,15 +152,15 @@ impl<T: Token> Profile<T> {
 
         while url.is_some() {
             let response = client.get(url.unwrap()).send()?.error_for_status()?;
-            let media_response: response::Media = response.json()?;
-            url = crate::parse_opt(media_response.paging.next)?;
+            let media_container: response::MediaContainer = response.json()?;
+            url = crate::parse_opt(media_container.paging.next)?;
 
             let tx = Arc::clone(&media);
-            let data = media_response.data;
+            let data = media_container.data;
             pool.execute(move || {
                 let mut media = tx.lock().unwrap();
                 for response in data {
-                    media.push(MediaItem::from(response).unwrap());
+                    media.push(Media::from(response).unwrap());
                 }
             });
         }
@@ -151,7 +175,10 @@ impl<T: Token> Profile<T> {
     fn media_params(&self) -> [(&str, &str); 2] {
         [
             ("access_token", self.token.get()),
-            ("fields", "caption,id,media_type,media_url,permalink,thumbnail_url,timestamp,username"),
+            (
+                "fields",
+                "caption,id,media_type,media_url,permalink,thumbnail_url,timestamp,username"
+            ),
         ]
     }
 }
@@ -160,9 +187,11 @@ impl Info {
     pub fn username(&self) -> &str {
         &self.username
     }
+    /// Get a type of the user's account.
     pub fn account_type(&self) -> AccountType {
         self.account_type
     }
+    /// Returns user's number of media.
     pub fn media_count(&self) -> u64 {
         self.media_count
     }
@@ -181,20 +210,22 @@ impl Info {
     }
 }
 
-impl MediaItem {
+impl Media {
     pub fn id(&self) -> u64 {
         self.id
     }
     pub fn media_type(&self) -> MediaType {
         self.media_type
     }
+    /// Get media's owner username.
     pub fn username(&self) -> &str {
         &self.username
     }
-    /// Returns `None` for an album item.
+    /// Returns `None` if a Media inside an album.
     pub fn caption(&self) -> Option<&str> {
         self.caption.as_deref()
     }
+    /// Returns publish date.
     pub fn timestamp(&self) -> &DateTime<FixedOffset> {
         &self.timestamp
     }
@@ -202,17 +233,17 @@ impl MediaItem {
     pub fn media_url(&self) -> &Url {
         &self.media_url
     }
-    /// Returns `None` if an item contains copyrighted material,
-    /// or it has been flagged for a copyright violation.
+    /// Get permanent URL. Returns `None` if an item contains copyrighted
+    /// material, or it has been flagged for a copyright violation.
     pub fn permalink(&self) -> Option<&Url> {
         self.permalink.as_ref()
     }
-    /// URL available only for videos.
+    /// Get thumbnail image URL. Only available for videos.
     pub fn thumbnail_url(&self) -> Option<&Url> {
         self.thumbnail_url.as_ref()
     }
 
-    fn from(response: response::MediaItem) -> crate::Result<Self> {
+    fn from(response: response::Media) -> crate::Result<Self> {
         Ok(Self {
             id: response.id.parse()?,
             media_type: match response.media_type.as_str() {
@@ -230,5 +261,57 @@ impl MediaItem {
             permalink: crate::parse_opt(response.permalink)?,
             thumbnail_url: crate::parse_opt(response.thumbnail_url)?,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn into_info() {
+        assert!(Info::from(default_info_response()).is_ok());
+    }
+
+    #[test]
+    #[should_panic(expected = "invalid account type")]
+    fn into_invalid_info() {
+        let mut response = default_info_response();
+        response.account_type = "UNKNOWN".to_string();
+        Info::from(response).unwrap();
+    }
+
+    #[test]
+    fn into_media() {
+        assert!(Media::from(default_media_response()).is_ok());
+    }
+
+    #[test]
+    #[should_panic(expected = "invalid media type")]
+    fn into_invalid_media() {
+        let mut response = default_media_response();
+        response.media_type = "UNKNOWN".to_string();
+        Media::from(response).unwrap();
+    }
+
+    fn default_info_response() -> response::Info {
+        response::Info {
+            account_type: "BUSINESS".to_string(),
+            media_count: 0,
+            username: String::new(),
+        }
+    }
+
+    fn default_media_response() -> response::Media {
+        response::Media {
+            caption: None,
+            id: '0'.to_string(),
+            media_type: "IMAGE".to_string(),
+            media_url: "test:".to_string(),
+            permalink: None,
+            thumbnail_url: None,
+            timestamp: "1970-01-01T00:00:00+0000".to_string(),
+            username: String::new(),
+        }
     }
 }

@@ -11,16 +11,27 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 /// Private information that specific for an Instagram application.
+///
+/// # Examples
+/// ```
+/// let secrets = instafetcher::auth::Secrets {
+///     app_id: 759250753489257,
+///     app_secret: "584afbb84069420aae402315ffddd360",
+///     oauth_uri: url::Url::parse("https://example.com/auth").unwrap(),
+/// };
+/// ```
 pub struct Secrets {
     /// Application ID.
     pub app_id: u64,
     /// Application secret.
     pub app_secret: &'static str,
     /// Redirect URI that used upon the successful authorization.
-    pub oauth_uri: &'static str,
+    pub oauth_uri: Url,
 }
 
 /// Represents an User Access Token.
+///
+/// Use [ShortLivedToken::new] or [LongLivedToken::new] to construct a token.
 pub trait Token {
     /// Returns the user's app-scoped token.
     fn get(&self) -> &str;
@@ -45,6 +56,7 @@ pub struct ShortLivedToken {
 }
 
 /// Serializable long-lived token that valid for 60 days, or 90 days for private accounts.
+///
 /// Can be refreshed.
 #[derive(Serialize, Deserialize)]
 pub struct LongLivedToken {
@@ -84,7 +96,7 @@ impl ShortLivedToken {
         let params: HashMap<_, _> = [
             ("client_id", app_id.as_str()),
             ("client_secret", secrets.app_secret),
-            ("redirect_uri", secrets.oauth_uri),
+            ("redirect_uri", secrets.oauth_uri.as_str()),
             ("grant_type", "authorization_code"),
             ("code", code),
         ].iter().cloned().collect();
@@ -186,6 +198,7 @@ impl Token for LongLivedToken {
 }
 
 /// Interactively forwards the user to the authorization page and requests a code.
+///
 /// Returns the trimmed authorization code.
 ///
 /// # Panics
@@ -221,7 +234,7 @@ pub fn request_code(secrets: &Secrets) -> crate::Result<String> {
 pub fn auth_url(secrets: &Secrets) -> Result<Url, url::ParseError> {
     Url::parse_with_params(format!("{}/oauth/authorize", crate::AUTH_BASE_URL).as_str(), [
         ("client_id", secrets.app_id.to_string().as_str()),
-        ("redirect_uri", secrets.oauth_uri),
+        ("redirect_uri", secrets.oauth_uri.as_str()),
         ("scope", "user_profile,user_media"),
         ("response_type", "code"),
     ])
@@ -236,13 +249,15 @@ mod tests {
         let secrets = Secrets {
             app_id: 0,
             app_secret: "",
-            oauth_uri: "",
+            oauth_uri: Url::parse("test:").unwrap(),
         };
         assert!(super::auth_url(&secrets).is_ok())
     }
 
     #[test]
     fn into_short_lived_token() {
+        // Just check if it won't panic.
+        #[allow(unused_must_use)]
         ShortLivedToken::from(response::ShortLivedToken {
               access_token: String::new(),
               user_id: 0,

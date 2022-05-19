@@ -36,7 +36,7 @@ mod tests {
 
     #[test]
     fn parse_opt() {
-        let opt_str = Some("https://example.com".to_string());
+        let opt_str = Some("test:".to_string());
         let opt_url: Option<Url> = super::parse_opt(opt_str).unwrap();
         assert!(opt_url.is_some());
 

@@ -5,12 +5,9 @@ edition = "2018"
 repository = "https://github.com/lem0nez/instafetcher"
 readme = "README.md"
 license = "MIT"
-keywords = ["cli", "instagram"]
-categories = ["command-line-utilities"]
-description = """
-A sample utility to gather metadata and media files of \
-Instagram accounts using the Instagram Basic Display API
-"""
+keywords = ["api", "cli", "instagram"]
+categories = ["api-bindings", "command-line-utilities"]
+description = "Wrapper around the Instagram Basic Display API to gather metadata and media files"
 
 [dependencies]
 chrono = { version = "0.4.19", features = ["serde"] }

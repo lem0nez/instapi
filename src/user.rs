@@ -24,9 +24,9 @@ pub struct Info {
 }
 
 /// The user's account type.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Eq, PartialEq, Hash)]
 pub enum AccountType {
-    Bussiness,
+    Business,
     MediaCreator,
     Personal,
 }
@@ -45,7 +45,7 @@ pub struct Media {
 }
 
 /// Type of a media item.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Eq, PartialEq, Hash)]
 pub enum MediaType {
     Image,
     Video,
@@ -200,7 +200,7 @@ impl Info {
         Ok(Self {
             username: response.username,
             account_type: match response.account_type.as_str() {
-                "BUSINESS" => AccountType::Bussiness,
+                "BUSINESS" => AccountType::Business,
                 "MEDIA_CREATOR" => AccountType::MediaCreator,
                 "PERSONAL" => AccountType::Personal,
                 _ => return Err("invalid account type".into()),

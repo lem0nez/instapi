@@ -2,6 +2,7 @@
 name = "instapi"
 version = "0.1.0"
 edition = "2018"
+authors = ["Nikita Dudko <nikita.dudko.95@gmail.com>"]
 repository = "https://github.com/lem0nez/instapi"
 readme = "README.md"
 license = "MIT"

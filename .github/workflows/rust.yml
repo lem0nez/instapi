@@ -2,7 +2,7 @@ name: Rust
 on: [push, pull_request]
 env:
   CARGO_DISPLAY_OPTS: --color=always
-  CARGO_BUILD_OPTS: # --release
+  CARGO_BUILD_OPTS: --release
 
   INSTAGRAM_APP_ID: ${{ secrets.INSTAGRAM_APP_ID }}
   INSTAGRAM_APP_SECRET: ${{ secrets.INSTAGRAM_APP_SECRET }}

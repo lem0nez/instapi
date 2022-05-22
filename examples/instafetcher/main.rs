@@ -56,6 +56,10 @@ fn main() {
     }
 }
 
+/// Performs authorization, retrieves a long-lived token and saves it.
+///
+/// # Panics
+/// If invalid secrets provided.
 fn log_in() -> Result<(), String> {
     let secrets = Secrets {
         app_id: env!("INSTAGRAM_APP_ID")
@@ -94,6 +98,7 @@ fn log_in() -> Result<(), String> {
     Ok(())
 }
 
+/// Loads a token and displays the basic user information.
 fn print_info() -> Result<(), String> {
     let token = token::load(None);
     if let Err(e) = token {
@@ -124,6 +129,10 @@ fn print_info() -> Result<(), String> {
     Ok(())
 }
 
+/// If `func` returns `Err`, prints an error message and terminates the current process.
+///
+/// # Panics
+/// If `func` panics or if failed to write to the standard output.
 fn run_or_exit<F: Fn() -> Result<(), String>>(func: F) {
     if let Err(message) = func() {
         eprintln!("{}", message);
@@ -131,6 +140,10 @@ fn run_or_exit<F: Fn() -> Result<(), String>>(func: F) {
     }
 }
 
+/// If a directory exists, checks if it empty and readable, otherwise creates a new one.
+///
+/// # Panics
+/// If `format!` panics.
 fn validate_output_dir(path: &OsStr) -> Result<PathBuf, String> {
     let path = Path::new(path);
     if path.exists() {

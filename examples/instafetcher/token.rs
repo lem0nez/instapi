@@ -2,8 +2,9 @@
 // Contacts: <nikita.dudko.95@gmail.com>
 // Licensed under the MIT License.
 
-use instapi::auth::{LongLivedToken, Token};
+//! Contains functions to load and preserve a long-lived token.
 
+use instapi::auth::{LongLivedToken, Token};
 use std::{
     error::Error,
     fs,
@@ -12,6 +13,11 @@ use std::{
 };
 use chrono::{Duration, Utc};
 
+/// Reads and deserializes a long-lived token.
+/// Do refresh and saves updated token if it will expire soon.
+///
+/// # Panics
+/// If `format!` panics or if failed to write to the standard output.
 pub fn load(path: Option<&Path>) -> Result<LongLivedToken, Box<dyn Error>> {
     const REFRESH_THRESHOLD_DAYS: i64 = 7;
     const LOGIN_SUGGESTION: &str = "(use --log-in to perform authorization)";
@@ -53,6 +59,10 @@ pub fn load(path: Option<&Path>) -> Result<LongLivedToken, Box<dyn Error>> {
     Ok(token)
 }
 
+/// Serializes and saves `token` to `path`.
+///
+/// # Panics
+/// If failed to write to the standard output.
 pub fn save(token: &LongLivedToken, path: Option<&Path>) -> Result<(), Box<dyn Error>> {
     let path = match path {
         Some(path) => path.to_path_buf(),
@@ -65,6 +75,7 @@ pub fn save(token: &LongLivedToken, path: Option<&Path>) -> Result<(), Box<dyn E
     if cfg!(unix) {
         if let Ok(metadata) = fs::metadata(&path) {
             let mut perms = metadata.permissions();
+            // Limit read-write access to the owner only.
             perms.set_mode(0o600);
             fs::set_permissions(&path, perms).ok();
         }
@@ -81,6 +92,11 @@ pub fn save(token: &LongLivedToken, path: Option<&Path>) -> Result<(), Box<dyn E
     Ok(())
 }
 
+/// Get path to the serialized long-lived token file. Creates configuration directory
+/// recursively if it doesn't exist. If the directory isn't available, returns file name only.
+///
+/// # Panics
+/// If `format!` panics.
 pub fn path() -> PathBuf {
     let mut path = Path::new(
         format!("{}-token", env!("CARGO_CRATE_NAME")).as_str()

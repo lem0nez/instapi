@@ -2,6 +2,8 @@
 // Contacts: <nikita.dudko.95@gmail.com>
 // Licensed under the MIT License.
 
+//! Functions to download media files.
+
 use crate::token;
 use instapi::{
     auth::LongLivedToken,
@@ -17,6 +19,11 @@ use std::{
 };
 use threadpool::ThreadPool;
 
+/// Loads a token, gathers media information and downloads contents to `output_dir`.
+///
+/// # Panics
+/// 1. If [token::load], [instapi::user::Profile::media], [download_album] or `format!` panics.
+/// 2. If failed to write to the standard output.
 pub fn download_all(output_dir: &Path, include_albums: bool) -> Result<(), String> {
     let token = token::load(None);
     if let Err(e) = token {
@@ -52,6 +59,11 @@ pub fn download_all(output_dir: &Path, include_albums: bool) -> Result<(), Strin
     Ok(())
 }
 
+/// Gathers album information, creates a directory and downloads album contents to it.
+///
+/// # Panics
+/// 1. If [print], [instapi::user::Profile::album] or [filename] panics.
+/// 2. If failed to write to the standard output.
 fn download_album(
     album: &Media,
     output_dir: &Path,
@@ -84,6 +96,10 @@ fn download_album(
     }
 }
 
+/// Prints `media` information to the standard output. `parent_id` is ID of album the media is in.
+///
+/// # Panics
+/// If `format!` panics or if failed to write to the output.
 fn print(media: &Media, parent_id: Option<u64>) {
     let types: HashMap<_, _> = [
         (MediaType::Image, "image"),
@@ -114,6 +130,11 @@ fn print(media: &Media, parent_id: Option<u64>) {
     println!("{}", buffer);
 }
 
+/// Downloads `media`'s content to the `output_dir`. File name constructs using [filename].
+/// Extension retrieves from URL. Return path to the downloaded file.
+///
+/// # Panics
+/// If [filename] panics.
 fn download_file(media: &Media, output_dir: &Path) -> Result<PathBuf, Box<dyn Error>> {
     let url = media.media_url();
 
@@ -135,6 +156,10 @@ fn download_file(media: &Media, output_dir: &Path) -> Result<PathBuf, Box<dyn Er
     Ok(filepath)
 }
 
+/// Constructs a file name based on media's metadata.
+///
+/// # Panics
+/// If `format!` panics.
 fn filename(media: &Media) -> String {
     format!(
         "{}_{}_{}",
